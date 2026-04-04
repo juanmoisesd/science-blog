@@ -89,11 +89,11 @@ def save_raw_content():
     os.makedirs("raw_content", exist_ok=True)
     
     posts = fetch_content("posts")
-    with open("raw_content/posts.json", "w") as f:
+    with open("raw_content/posts.json", "w", encoding="utf-8") as f:
         json.dump(posts, f)
         
     pages = fetch_content("pages")
-    with open("raw_content/pages.json", "w") as f:
+    with open("raw_content/pages.json", "w", encoding="utf-8") as f:
         json.dump(pages, f)
     
     print(f"Saved {len(posts)} posts and {len(pages)} pages.")
@@ -253,9 +253,9 @@ def full_generation():
     if not os.path.exists("raw_content/posts.json"):
         save_raw_content()
         
-    with open("raw_content/posts.json", "r") as f:
+    with open("raw_content/posts.json", "r", encoding="utf-8") as f:
         posts = json.load(f)
-    with open("raw_content/pages.json", "r") as f:
+    with open("raw_content/pages.json", "r", encoding="utf-8") as f:
         pages = json.load(f)
     
     article_template = Template("""
@@ -336,7 +336,7 @@ def full_generation():
             html = article_template.render(**rewritten)
             
             filepath = os.path.join(lang_dir, f"{rewritten['slug']}.html")
-            with open(filepath, "w") as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 f.write(html)
             
             all_urls.append(f"https://juanmoisesd.github.io/science-blog/{lang_code}/{rewritten['slug']}.html")
