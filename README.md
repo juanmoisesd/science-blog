@@ -359,3 +359,12 @@ This project generates static HTML websites from WordPress content, creating a m
                                                                                                                                                                                   **Last Updated:** April 4, 2026  
                                                                                                                                                                                   **Status:** Active Development  
                                                                                                                                                                                   **Version:** 1.0.0
+
+## How to Cite
+
+If you use this repository in your research, please cite:
+
+> de la Serna, J. M. (2026). *Science Blog*. Universidad Internacional de La Rioja (UNIR).
+> https://github.com/juanmoisesd/science-blog 
+
+See `CITATION.cff` for formatted references.
