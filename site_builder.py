@@ -5,6 +5,10 @@ from bs4 import BeautifulSoup
 from jinja2 import Template
 import xml.etree.ElementTree as ET
 import time
+from deep_translator import GoogleTranslator
+
+# Simple cache for translations
+translation_cache = {}
 
 # Configuration
 BASE_URL = "https://juanmoisesdelaserna.es/wp-json/wp/v2"
@@ -49,6 +53,40 @@ LANGUAGES = {
     "vie": {"name": "Blog tâm lý học và thần kinh học", "lang": "vi", "dir": "ltr"},
     "fas": {"name": "وبلاگ روانشناسی og علوم اعصاب", "lang": "fa", "dir": "rtl"},
 }
+
+def translate_text(text, target_lang):
+    """Translate text using GoogleTranslator."""
+    if not text or target_lang == 'en':
+        return text
+
+    cache_key = (text, target_lang)
+    if cache_key in translation_cache:
+        return translation_cache[cache_key]
+
+    try:
+        translator = GoogleTranslator(source='auto', target=target_lang)
+        if len(text) > 4500:
+            # Simple chunking by paragraphs if too long
+            parts = text.split('\n')
+            translated_parts = []
+            current_chunk = ""
+            for part in parts:
+                if len(current_chunk) + len(part) < 4500:
+                    current_chunk += part + '\n'
+                else:
+                    translated_parts.append(translator.translate(current_chunk))
+                    current_chunk = part + '\n'
+            if current_chunk:
+                translated_parts.append(translator.translate(current_chunk))
+            result = "".join(translated_parts)
+        else:
+            result = translator.translate(text)
+
+        translation_cache[cache_key] = result
+        return result
+    except Exception as e:
+        print(f"Translation error for {target_lang}: {e}")
+        return text
 
 def fetch_content(endpoint):
     """Fetch all items from a WP REST API endpoint with pagination."""
@@ -101,35 +139,32 @@ def save_raw_content():
 def rewrite_content(item, lang_code, lang_info):
     """Rewrite content for a given item and language."""
     original_title = item.get('title', {}).get('rendered', '')
+    target_lang = lang_info['lang']
+
+    rewritten_title = translate_text(original_title, target_lang)
     
-    rewritten_title = f"{original_title}"
-    rewritten_description = f"Latest scientific perspectives on {original_title}. Updated 2024 analysis in {lang_info['name']}."
-    rewritten_keywords = f"science, {lang_code}, psychology, neuroscience, research"
+    desc_base = f"Latest scientific perspectives on {original_title}. Updated 2024 analysis in {lang_info['name']}."
+    rewritten_description = translate_text(desc_base, target_lang)
     
-    tldr = [
+    keywords_base = f"science, psychology, neuroscience, research, {original_title}"
+    rewritten_keywords = translate_text(keywords_base, target_lang)
+
+    tldr_en = [
         "Updated scientific analysis for 2024.",
         "Focus on psychology and neuroscience perspectives.",
         "Easy-to-read summary of complex research findings."
     ]
+    tldr = [translate_text(point, target_lang) for point in tldr_en]
     
-    content = f"""
-    <h2 id="intro">Introduction to {original_title}</h2>
-    <p>Understanding the complexities of {original_title} requires a multi-disciplinary approach, combining latest neuroscience data with psychological theories.</p>
-    <p>Recent studies in 2024 have highlighted new pathways and behavioral patterns that were previously misunderstood.</p>
+    # Extract original content and strip HTML
+    original_content_html = item.get('content', {}).get('rendered', '')
+    soup = BeautifulSoup(original_content_html, "html.parser")
+    plain_text = soup.get_text(separator="\n")
     
-    <h2 id="analysis">Scientific Analysis and Data</h2>
-    <p>Data suggests that the impact of these findings is significant across various demographics. The neuro-chemical responses observed provide a clear link to the behavioral outcomes discussed in the original research.</p>
-    <p>Short paragraphs ensure better readability and retention for the reader, following science communication standards.</p>
+    translated_body = translate_text(plain_text, target_lang)
     
-    <h3 id="future">Future Perspectives</h3>
-    <p>As we move forward, the integration of AI and more precise imaging techniques will likely yield even more detailed insights into this subject.</p>
-    """
-    
-    headings = [
-        {"id": "intro", "text": f"Introduction to {original_title}"},
-        {"id": "analysis", "text": "Scientific Analysis and Data"},
-        {"id": "future", "text": "Future Perspectives"}
-    ]
+    # Format translated body into paragraphs
+    content = "".join([f"<p>{p}</p>" for p in translated_body.split('\n') if p.strip()])
     
     return {
         "title": rewritten_title,
@@ -137,7 +172,7 @@ def rewrite_content(item, lang_code, lang_info):
         "keywords": rewritten_keywords,
         "tldr": tldr,
         "content": content,
-        "headings": headings,
+        "headings": [],
         "date_published": item.get('date', '2024-01-01'),
         "slug": item.get('slug', 'index'),
         "lang": lang_info['lang'],
@@ -179,28 +214,36 @@ def generate_index_pages(posts, pages, output_dir):
 
     lang_template = Template("""
     <!DOCTYPE html>
-    <html lang="{{ lang }}" dir="{{ dir }}">
+    <html lang="{{ lang_code }}" dir="{{ dir }}">
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ blog_name }}</title>
         <style>
-            body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            .item { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-            h2 { margin-bottom: 5px; }
-            p { color: #666; font-size: 0.9em; }
+            body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background-color: #f6f6f6; }
+            h1 { color: #333; border-bottom: 2px solid #0645ad; padding-bottom: 10px; }
+            .article-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+            .article-card { background: white; padding: 15px; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+            .article-card:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.2); transition: 0.3s; }
+            .article-card a { color: #0645ad; text-decoration: none; font-size: 16px; font-weight: bold; }
+            .article-card a:hover { text-decoration: underline; }
+            .back-link { margin-bottom: 20px; }
+            .back-link a { color: #0645ad; text-decoration: none; }
         </style>
     </head>
     <body>
+        <div class="back-link">
+            <a href="../index.html">← Back to language selection</a>
+        </div>
         <h1>{{ blog_name }}</h1>
-        <div class="items">
+        <div class="article-list">
             {% for item in items %}
-            <div class="item">
+            <div class="article-card">
                 <h2><a href="{{ item.slug }}.html">{{ item.title }}</a></h2>
                 <p>{{ item.description }}</p>
             </div>
             {% endfor %}
         </div>
-        <p><a href="../index.html">← Back to language selection</a></p>
     </body>
     </html>
     """)
@@ -211,16 +254,24 @@ def generate_index_pages(posts, pages, output_dir):
         
         lang_items = []
         for item in (posts + pages):
+             title = item.get('title', {}).get('rendered', '')
+             translated_title = translate_text(title, lang_info['lang'])
+             desc = f"Scientific update about {title}"
+             translated_desc = translate_text(desc, lang_info['lang'])
+             # Ensure the prefix itself is also translated if it missed it
+             if "Scientific update about" in translated_desc:
+                 translated_prefix = translate_text("Scientific update about", lang_info['lang'])
+                 translated_desc = translated_desc.replace("Scientific update about", translated_prefix)
              lang_items.append({
                  "slug": item.get('slug'),
-                 "title": item.get('title', {}).get('rendered'),
-                 "description": f"Scientific update about {item.get('title', {}).get('rendered')}"
+                 "title": translated_title,
+                 "description": translated_desc
              })
              
         with open(os.path.join(lang_dir, "index.html"), "w") as f:
             f.write(lang_template.render(
                 blog_name=lang_info['name'],
-                lang=lang_info['lang'],
+                lang_code=lang_code,
                 dir=lang_info['dir'],
                 items=lang_items
             ))
@@ -260,7 +311,7 @@ def full_generation():
     
     article_template = Template("""
     <!DOCTYPE html>
-    <html lang="{{ lang }}" dir="{{ dir }}">
+    <html lang="{{ lang_code }}" dir="{{ dir }}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
